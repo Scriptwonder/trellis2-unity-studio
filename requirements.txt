@@ -1,0 +1,25 @@
+# TRELLIS.2 Unity Studio
+# Server and Web Interface Dependencies
+
+# Server
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+
+# Web Interface
+gradio>=4.0.0
+requests>=2.31.0
+
+# Core
+numpy>=1.24.0
+pillow>=10.0.0
+
+# Hugging Face
+huggingface-hub>=0.20.0
+
+# Utilities
+tqdm>=4.66.0
+pyyaml>=6.0
+
+# PyTorch - install separately:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
