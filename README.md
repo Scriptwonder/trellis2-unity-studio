@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>AI-Powered 3D Generation for Unity</b><br>
-  Generate high-quality 3D assets from text or images directly in Unity Editor
+  Generate high-quality 3D assets from text or images directly in Unity Editor via Flux2 and Trellis.2
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
 
 ## Overview
 
-**TRELLIS.2 Unity Studio** provides seamless AI-powered 3D generation directly within Unity. Generate game-ready assets from text descriptions or reference images without leaving the editor.
+**TRELLIS.2 Unity Studio** provides accessible SOTA 3D generation directly within Unity. Generating game assets with "easy" setups (Much easier than official instruction I hope).
 
 **Key Features:**
 - **Native Unity Integration** — Editor window for generation workflow, supporting both image-to-3d and text-to-3d via Flux 2.
