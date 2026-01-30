@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+# trellis2-unity-studio
+Generate high-quality 3D assets from text or images directly in Unity Editor via Flux2 and Trellis.2
+=======
 <p align="center">
   <img src="assets/examples/image.png" alt="TRELLIS.2 Unity Studio" width="600"/>
 </p>
@@ -6,7 +10,7 @@
 
 <p align="center">
   <b>AI-Powered 3D Generation for Unity</b><br>
-  Generate high-quality 3D assets from text or images directly in Unity Editor via Flux2 and Trellis.2
+  Generate high-quality 3D assets from text or images directly in Unity Editor
 </p>
 
 <p align="center">
@@ -20,7 +24,7 @@
 
 ## Overview
 
-**TRELLIS.2 Unity Studio** provides accessible SOTA 3D generation directly within Unity. Generating game assets with "easy" setups (Much easier than official instruction I hope).
+**TRELLIS.2 Unity Studio** provides seamless AI-powered 3D generation directly within Unity. Generate game-ready assets from text descriptions or reference images without leaving the editor. Require machines with 16GB+ VRAM to start.
 
 **Key Features:**
 - **Native Unity Integration** — Editor window for generation workflow, supporting both image-to-3d and text-to-3d via Flux 2.
@@ -38,7 +42,10 @@ git clone --recursive https://github.com/your-org/trellis2-unity-studio.git
 cd trellis2-unity-studio
 ```
 
-### 2. Start the Server
+### 2. Setup Server and Unity Side
+View <a href="#unity-setup">Unity Setup</a> and <a href="#server-setup">Server Setup</a> throughly and set the server up
+
+### 3. Start the Server
 ```bash
 # Setup (first time only)
 ./scripts/setup.sh
@@ -48,7 +55,7 @@ python src/trellis2_server.py
 ```
 Server runs at `http://localhost:8000`
 
-### 3. Setup Unity Project
+### 4. Setup Unity Project
 ```
 1. Copy unity/ folder contents to: Assets/Trellis2/
 2. Open Tools > TRELLIS.2 > Generation Window
@@ -324,3 +331,4 @@ Built on [Microsoft TRELLIS.2](https://github.com/microsoft/TRELLIS.2) (MIT Lice
   <a href="https://github.com/your-org/trellis2-unity-studio">GitHub</a> •
   <a href="https://github.com/your-org/trellis2-unity-studio/issues">Issues</a>
 </p>
+>>>>>>> 51435ab (Repo for public release)
