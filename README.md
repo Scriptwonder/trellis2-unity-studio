@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-# trellis2-unity-studio
-Generate high-quality 3D assets from text or images directly in Unity Editor via Flux2 and Trellis.2
-=======
 <p align="center">
   <img src="assets/examples/image.png" alt="TRELLIS.2 Unity Studio" width="600"/>
 </p>
@@ -331,4 +327,3 @@ Built on [Microsoft TRELLIS.2](https://github.com/microsoft/TRELLIS.2) (MIT Lice
   <a href="https://github.com/your-org/trellis2-unity-studio">GitHub</a> •
   <a href="https://github.com/your-org/trellis2-unity-studio/issues">Issues</a>
 </p>
->>>>>>> 51435ab (Repo for public release)
