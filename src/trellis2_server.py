@@ -59,16 +59,16 @@ def _as_download_path(path: str) -> str:
 class TextSubmitRequest(BaseModel):
     """Request body for text-to-3D submission."""
     prompt: str = Field(..., description="Text prompt describing the 3D object")
-    quality: Literal["fast", "balanced", "high"] = Field(
+    quality: Literal["superfast", "fast", "balanced", "high"] = Field(
         default="balanced",
-        description="Quality preset: fast (~60s), balanced (~90s), high (~180s)"
+        description="Quality preset: superfast (~15s), fast (~60s), balanced (~90s), high (~180s)"
     )
     seed: int = Field(default=42, description="Random seed for reproducibility")
 
 
 class ImageSubmitRequest(BaseModel):
     """Query parameters for image-to-3D submission."""
-    quality: Literal["fast", "balanced", "high"] = "balanced"
+    quality: Literal["superfast", "fast", "balanced", "high"] = "balanced"
     seed: int = 42
 
 

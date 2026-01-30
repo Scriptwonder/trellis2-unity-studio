@@ -30,6 +30,18 @@ MIN_RAM_KEEP_LOADED = 48
 
 # Quality presets
 QUALITY_PRESETS = {
+    'superfast': {
+        'pipeline_type': '512',
+        'inference_steps': 4,
+        'decimation_target': 30000,
+        'texture_size': 512,
+        'remesh': False,
+        # Optimized sampler params for maximum speed
+        'ss_guidance_strength': 5.0,
+        'shape_guidance_strength': 5.0,
+        'tex_guidance_strength': 1.0,
+        'use_compile': True,  # torch.compile for speed
+    },
     'fast': {
         'pipeline_type': '512',
         'inference_steps': 15,
@@ -53,7 +65,7 @@ QUALITY_PRESETS = {
     },
 }
 
-QualityLevel = Literal['fast', 'balanced', 'high']
+QualityLevel = Literal['superfast', 'fast', 'balanced', 'high']
 
 # Progress stages reported during generation
 STAGES = {
@@ -155,7 +167,7 @@ class Trellis2Pipeline:
             print("[INFO] Flux pipeline loaded.")
         return self._flux_pipe
 
-    def _load_trellis(self) -> Trellis2ImageTo3DPipeline:
+    def _load_trellis(self, use_compile: bool = False) -> Trellis2ImageTo3DPipeline:
         """Load TRELLIS.2 pipeline (lazy loading)."""
         if self._trellis_pipe is None:
             print("[INFO] Loading TRELLIS.2 pipeline...")
@@ -165,6 +177,26 @@ class Trellis2Pipeline:
             self._trellis_pipe.cuda()
             self._trellis_pipe.low_vram = True
             print("[INFO] TRELLIS.2 pipeline loaded.")
+        
+        # Apply torch.compile for superfast mode (cached after first run)
+        if use_compile and not getattr(self, '_compiled', False):
+            try:
+                print("[INFO] Compiling models with torch.compile (first run will be slow)...")
+                if 'sparse_structure_flow_model' in self._trellis_pipe.models:
+                    self._trellis_pipe.models['sparse_structure_flow_model'] = torch.compile(
+                        self._trellis_pipe.models['sparse_structure_flow_model'],
+                        mode='reduce-overhead'
+                    )
+                if 'shape_slat_flow_model_512' in self._trellis_pipe.models:
+                    self._trellis_pipe.models['shape_slat_flow_model_512'] = torch.compile(
+                        self._trellis_pipe.models['shape_slat_flow_model_512'],
+                        mode='reduce-overhead'
+                    )
+                self._compiled = True
+                print("[INFO] Models compiled successfully.")
+            except Exception as e:
+                print(f"[WARN] torch.compile failed (continuing without): {e}")
+        
         return self._trellis_pipe
 
     def _unload_flux(self):
@@ -228,8 +260,28 @@ class Trellis2Pipeline:
         # Load TRELLIS.2
         _report('loading_trellis')
         t0 = time.time()
-        trellis = self._load_trellis()
+        use_compile = preset.get('use_compile', False)
+        trellis = self._load_trellis(use_compile=use_compile)
         timings['trellis_load'] = time.time() - t0
+
+        # Build sampler params (superfast uses optimized guidance values)
+        ss_params = {
+            'steps': preset['inference_steps'],
+        }
+        shape_params = {
+            'steps': preset['inference_steps'],
+        }
+        tex_params = {
+            'steps': preset['inference_steps'],
+        }
+        
+        # Apply optimized guidance for superfast mode
+        if 'ss_guidance_strength' in preset:
+            ss_params['guidance_strength'] = preset['ss_guidance_strength']
+        if 'shape_guidance_strength' in preset:
+            shape_params['guidance_strength'] = preset['shape_guidance_strength']
+        if 'tex_guidance_strength' in preset:
+            tex_params['guidance_strength'] = preset['tex_guidance_strength']
 
         # Generate 3D mesh
         _report('generating_mesh')
@@ -238,9 +290,9 @@ class Trellis2Pipeline:
             image,
             seed=seed,
             pipeline_type=preset['pipeline_type'],
-            sparse_structure_sampler_params={'steps': preset['inference_steps']},
-            shape_slat_sampler_params={'steps': preset['inference_steps']},
-            tex_slat_sampler_params={'steps': preset['inference_steps']}
+            sparse_structure_sampler_params=ss_params,
+            shape_slat_sampler_params=shape_params,
+            tex_slat_sampler_params=tex_params
         )[0]
         timings['trellis_generate'] = time.time() - t0
 

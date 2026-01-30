@@ -13,6 +13,7 @@ namespace Trellis2
     /// </summary>
     public enum GenerationQuality
     {
+        SuperFast,  // ~15s, lowest quality, for real-time iteration
         Fast,       // ~60s, lower quality
         Balanced,   // ~90s, good balance
         High        // ~180s, best quality
@@ -398,6 +399,7 @@ namespace Trellis2
         {
             return quality switch
             {
+                GenerationQuality.SuperFast => "superfast",
                 GenerationQuality.Fast => "fast",
                 GenerationQuality.High => "high",
                 _ => "balanced"

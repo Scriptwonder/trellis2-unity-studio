@@ -24,7 +24,7 @@
 
 **Key Features:**
 - **Native Unity Integration** — Editor window for generation workflow, supporting both image-to-3d and text-to-3d via Flux 2.
-- **Quality Presets** — Fast (60s), Balanced (90s), High (180s)
+- **Quality Presets** — SuperFast (~15s), Fast (~60s), Balanced (~90s), High (~180s)
 - **Auto-Import** — Generated GLBs import directly to project
 - **Web Interface** — Optional Gradio UI for standalone use
 
@@ -86,7 +86,7 @@ Open **Tools > TRELLIS.2 > Generation Window**
 | Setting | Description |
 |---------|-------------|
 | Server URL | API endpoint (default: `http://localhost:8000`) |
-| Quality | Fast / Balanced / High |
+| Quality | SuperFast / Fast / Balanced / High |
 | Seed | Random seed (-1 for random) |
 | Auto-Add to Scene | Spawn model on completion |
 
@@ -260,9 +260,10 @@ Response:
 
 | Preset | Time | Resolution | Use Case |
 |--------|------|------------|----------|
+| `superfast` | ~15s | 512³ | Real-time iteration, prototyping |
 | `fast` | ~60s | 512³ | Quick iterations, mobile |
-| `balanced` | ~90s | 1024³ | General use, games |
-| `high` | ~180s | 1536³ | Hero assets, cinematics |
+| `balanced` | ~90s | 512³ | General use, games |
+| `high` | ~180s | 1024³ | Hero assets, cinematics |
 
 ---
 
