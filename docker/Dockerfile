@@ -3,6 +3,12 @@ FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
+# Optimization flags for superfast mode
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+ENV ATTN_BACKEND=flash_attn
+ENV SPARSE_ATTN_BACKEND=flash_attn
+ENV SPARSE_CONV_BACKEND=flex_gemm
+
 RUN apt-get update && apt-get install -y \
     python3.10 python3-pip git curl \
     && rm -rf /var/lib/apt/lists/*

@@ -14,6 +14,9 @@ services:
       - ../outputs:/app/outputs
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
+      # For superfast mode performance
+      - MEMORY_MODE=keep_loaded
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     deploy:
       resources:
         reservations:
