@@ -10,7 +10,7 @@ Before starting, ensure you have:
 
 - [ ] **NVIDIA GPU** with 16GB+ VRAM (24GB+ recommended)
 - [ ] **Docker** with NVIDIA Container Toolkit installed
-- [ ] **32GB+ system RAM** (64GB+ for optimal performance)
+- [ ] **16GB+ system RAM** (64GB+ for optimal performance)
 - [ ] **HuggingFace account** with access to gated models
 - [ ] **Ubuntu 22.04** or compatible Linux distribution
 
