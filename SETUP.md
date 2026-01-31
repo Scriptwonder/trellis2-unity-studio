@@ -10,7 +10,7 @@ Before starting, ensure you have:
 
 - [ ] **NVIDIA GPU** with 16GB+ VRAM (24GB+ recommended)
 - [ ] **Docker** with NVIDIA Container Toolkit installed
-- [ ] **32GB+ system RAM** (64GB+ for optimal performance)
+- [ ] **16GB+ system RAM** (64GB+ for optimal performance)
 - [ ] **HuggingFace account** with access to gated models
 - [ ] **Ubuntu 22.04** or compatible Linux distribution
 
@@ -31,7 +31,6 @@ Before starting, ensure you have:
 4. Type: **Read** (minimum required)
 5. Click **"Generate token"**
 6. **Copy the token** (starts with `hf_...`)
-   - ⚠️ Save this token securely - you won't be able to see it again
 
 ### 1.3 Request Model Access
 
@@ -49,7 +48,7 @@ Visit each model page and click **"Request access"**:
    - https://huggingface.co/briaai/RMBG-2.0
    - Accept the license
 
-⏱️ **Access approval may take a few minutes to several hours**
+**Access approval may take a few minutes to several hours**
 
 ---
 
@@ -74,14 +73,7 @@ ls vendor/TRELLIS.2/trellis2/
 
 ## Step 3: Configure Environment
 
-### 3.1 Create `.env` File
-
-```bash
-# Copy template
-cp .env.example .env
-```
-
-### 3.2 Add Your HuggingFace Token
+### 3.1 Add Your HuggingFace Token
 
 Edit `.env` and replace the placeholder:
 
@@ -107,9 +99,9 @@ HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxx
 ```
 
 **Security Note:**
-- ⚠️ Never commit `.env` to git (already in `.gitignore`)
-- ⚠️ Don't share your token publicly
-- ✅ The `.env` file is automatically loaded by `run_docker.sh`
+- Never commit `.env` to git (already in `.gitignore`)
+- Don't share your token publicly
+- The `.env` file is automatically loaded by `run_docker.sh`
 
 ---
 
@@ -338,8 +330,8 @@ In Unity Editor:
 
 ## Next Steps
 
-✅ Server is running at `http://localhost:8000`  
-✅ Unity integration is ready  
+Server is running at `http://localhost:8000`  
+Unity integration is ready  
 
 **Try generating your first asset:**
 1. Open Unity: **Tools → TRELLIS.2 → Generation Window**
@@ -362,5 +354,3 @@ In Unity Editor:
 - **HuggingFace Help:** https://huggingface.co/docs
 
 ---
-
-**Happy generating! 🎨🤖**
