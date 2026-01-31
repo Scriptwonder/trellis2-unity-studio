@@ -9,8 +9,9 @@ Memory modes (set via MEMORY_MODE env var):
 import os
 os.environ.setdefault('OPENCV_IO_ENABLE_OPENEXR', '1')
 os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')
-os.environ.setdefault('ATTN_BACKEND', 'flash_attn')
-os.environ.setdefault('SPARSE_ATTN_BACKEND', 'flash_attn')
+# Set attention backends to flash_attn if you have GPU support
+os.environ.setdefault('ATTN_BACKEND', 'xformers')
+os.environ.setdefault('SPARSE_ATTN_BACKEND', 'xformers')
 os.environ.setdefault('SPARSE_CONV_BACKEND', 'flex_gemm')
 
 import gc
@@ -171,6 +172,18 @@ class Trellis2Pipeline:
         """Load TRELLIS.2 pipeline (lazy loading)."""
         if self._trellis_pipe is None:
             print("[INFO] Loading TRELLIS.2 pipeline...")
+            
+            # Clear any leftover torch function mode stack from Flux cpu_offload
+            # This prevents meta tensor issues in BiRefNet model loading
+            try:
+                import torch.utils._device as _device_module
+                # Pop all modes from the torch function stack
+                while _device_module._len_torch_function_stack() > 0:
+                    _device_module._pop_mode()
+                    print("[DEBUG] Popped a torch function mode")
+            except Exception as e:
+                print(f"[DEBUG] Could not clear torch function stack: {e}")
+            
             self._trellis_pipe = Trellis2ImageTo3DPipeline.from_pretrained(
                 self.trellis_model
             )
@@ -202,10 +215,27 @@ class Trellis2Pipeline:
     def _unload_flux(self):
         """Unload Flux to free memory."""
         if self._flux_pipe is not None:
+            # Remove cpu_offload hooks before deleting to clean up accelerate state
+            try:
+                self._flux_pipe.maybe_free_model_hooks()
+            except Exception:
+                pass
             del self._flux_pipe
             self._flux_pipe = None
             gc.collect()
             torch.cuda.empty_cache()
+            
+            # Reset torch device context stack to prevent meta tensor issues
+            # This is needed because enable_model_cpu_offload() may leave
+            # device contexts that cause torch.linspace() to create meta tensors
+            try:
+                from torch.utils._device import _device_constructors, _caching_mode
+                # Clear any registered device constructors that might redirect to meta device
+                if hasattr(torch.utils._device, '_device_constructors'):
+                    torch.utils._device._device_constructors.clear()
+            except Exception:
+                pass
+            
             print("[INFO] Flux pipeline unloaded.")
 
     def _unload_trellis(self):
