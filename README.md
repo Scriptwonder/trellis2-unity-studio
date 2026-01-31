@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> •
+  <a href="SETUP.md">Detailed Setup</a> •
   <a href="#unity-setup">Unity Setup</a> •
   <a href="#server-setup">Server Setup</a> •
   <a href="#api-reference">API Reference</a>
@@ -34,14 +35,33 @@
 
 ### 1. Clone Repository
 ```bash
-git clone --recursive https://github.com/your-org/trellis2-unity-studio.git
+git clone --recursive https://github.com/Scriptwonder/trellis2-unity-studio.git
 cd trellis2-unity-studio
 ```
 
-### 2. Setup Server and Unity Side
-View <a href="#unity-setup">Unity Setup</a> and <a href="#server-setup">Server Setup</a> throughly and set the server up
+### 2. Setup HuggingFace Authentication
+```bash
+# Copy environment template
+cp .env.example .env
 
-### 3. Start the Server
+# Edit .env and add your HuggingFace token
+# Get token from: https://huggingface.co/settings/tokens
+# Request access to gated models:
+#   - https://huggingface.co/collections/facebook/dinov3
+#   - https://huggingface.co/black-forest-labs/FLUX.2-klein-4B
+nano .env  # or use your preferred editor
+```
+
+### 3. Start the Server (Docker - Recommended)
+```bash
+# Build the image
+docker build -f docker/Dockerfile -t trellis2-unity-studio .
+
+# Run server
+./run_docker.sh --detach
+```
+
+**Alternative: Python Environment**
 ```bash
 # Setup (first time only)
 ./scripts/setup.sh
@@ -49,6 +69,7 @@ View <a href="#unity-setup">Unity Setup</a> and <a href="#server-setup">Server S
 # Start API server
 python src/trellis2_server.py
 ```
+
 Server runs at `http://localhost:8000`
 
 ### 4. Setup Unity Project
@@ -155,20 +176,67 @@ IEnumerator GenerateModel()
 
 ### Requirements
 
-- **GPU:** NVIDIA with 24GB+ VRAM (A100/H100 recommended, but also tested on RTX4080/5080)
+- **GPU:** NVIDIA with 16GB+ VRAM (24GB+ recommended)
+  - Tested on: RTX 4080/5080, A100, H100
+  - Minimum: RTX 3090/4090 (16GB VRAM)
 - **CUDA:** 12.4 or compatible
-- **Python:** 3.8+
-- **OS:** Linux
-- **HuggingFace**: Trellis.2 include several HF dependencies like DinoV3, so be sure to login HF with your created token, and request access to: (1)[Flux.2](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B), (2)[RMBG2.0](https://huggingface.co/briaai/RMBG-2.0), (3)[DinoV3](https://huggingface.co/collections/facebook/dinov3). 
+- **Python:** 3.10+
+- **OS:** Linux (Ubuntu 22.04 recommended)
+- **RAM:** 32GB+ system RAM (64GB+ for `keep_loaded` memory mode)
+- **HuggingFace Account:** Required for accessing gated models
+
+### HuggingFace Setup
+
+TRELLIS.2 uses several gated HuggingFace models that require authentication and access approval.
+
+**1. Create a HuggingFace account and token:**
+   - Sign up at https://huggingface.co
+   - Create a token: https://huggingface.co/settings/tokens
+   - Select "Read" permission (minimum required)
+
+**2. Request access to these models:**
+   - [DINOv3](https://huggingface.co/collections/facebook/dinov3) — Image feature extraction
+   - [FLUX.2-klein-4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) — Text-to-image generation
+   - [RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0) — Background removal
+
+**3. Configure your token:**
+   ```bash
+   # Copy environment template
+   cp .env.example .env
+   
+   # Edit .env and paste your token
+   # HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxx
+   nano .env
+   ```
 
 ### Installation
 
+**Option 1: Docker (Recommended)**
+
 ```bash
 # Clone with submodules
-git clone --recursive https://github.com/your-org/trellis2-unity-studio.git
+git clone --recursive https://github.com/Scriptwonder/trellis2-unity-studio.git
 cd trellis2-unity-studio
 
-# Run setup
+# Setup HuggingFace token (see above)
+cp .env.example .env
+nano .env  # Add your HF_TOKEN
+
+# Build Docker image
+docker build -f docker/Dockerfile -t trellis2-unity-studio .
+
+# Run server
+./run_docker.sh --detach
+```
+
+**Option 2: Python Environment**
+
+```bash
+# Clone with submodules
+git clone --recursive https://github.com/Scriptwonder/trellis2-unity-studio.git
+cd trellis2-unity-studio
+
+# Run setup script
 ./scripts/setup.sh
 
 # Or manual setup:
@@ -177,6 +245,10 @@ conda activate trellis2
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements.txt
 cd vendor/TRELLIS.2 && bash setup.sh --basic --flash-attn --nvdiffrast --cumesh --o-voxel
+
+# Login to HuggingFace
+huggingface-cli login
+# Paste your token when prompted
 ```
 
 ### Running the Server
@@ -194,8 +266,46 @@ python app.py --port 7860
 
 ### Docker
 
+**Prerequisites:**
+1. **HuggingFace Token** — Required for gated models (DINOv3)
+   - Get token from: https://huggingface.co/settings/tokens
+   - Request access to: [DINOv3](https://huggingface.co/collections/facebook/dinov3)
+
+2. **Create `.env` file:**
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your HuggingFace token:
+   # HF_TOKEN=your_token_here
+   ```
+
+**Build the image:**
 ```bash
-docker-compose up -d
+docker build -f docker/Dockerfile -t trellis2-unity-studio .
+```
+
+**Run with the helper script (recommended):**
+```bash
+# Default settings (auto-detect memory mode)
+./run_docker.sh
+
+# Run in background
+./run_docker.sh --detach
+
+# Specify memory mode
+./run_docker.sh --memory swap      # 32GB RAM
+./run_docker.sh --memory keep      # 64GB+ RAM
+```
+
+**Or run manually:**
+```bash
+docker run --gpus all --rm \
+  -p 8000:8000 \
+  -v $(pwd)/outputs:/app/outputs \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  --env-file .env \
+  -e MEMORY_MODE=auto \
+  --shm-size=8g \
+  trellis2-unity-studio
 ```
 
 Server available at `http://localhost:8000`
@@ -292,25 +402,54 @@ trellis2-unity-studio/
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| Server not responding | Check `http://localhost:8000/health` |
-| CUDA out of memory | Use `fast` quality or lower resolution |
-| GLB not loading in Unity | Install GLTFUtility or UnityGLTF |
-| Slow generation | Use `fast` preset for iterations |
-| Connection refused | Ensure server is running, check firewall |
+### Common Issues
 
-### Common Commands
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `401 Unauthorized` / `GatedRepoError` | Missing or invalid HuggingFace token | 1. Check `.env` file has correct `HF_TOKEN`<br>2. Request access to gated models<br>3. Ensure token has "Read" permission |
+| Server not responding | Server not started or crashed | Check `docker logs trellis2-unity-studio` or server logs |
+| `CUDA out of memory` | VRAM insufficient for quality preset | Use lower quality (`fast` or `superfast`)<br>Set `MEMORY_MODE=swap` |
+| Import errors in container | Missing dependencies or build issues | Rebuild image: `docker build --no-cache -f docker/Dockerfile .` |
+| GLB not loading in Unity | Missing GLB loader plugin | Install [GLTFUtility](https://github.com/Siccity/GLTFUtility) or [UnityGLTF](https://github.com/KhronosGroup/UnityGLTF) |
+| Slow generation | Heavy quality preset or swap mode | Use `fast`/`superfast` preset<br>Increase RAM for `keep_loaded` mode |
+| Connection refused | Server not running or wrong port | Verify server at `http://localhost:8000/health`<br>Check firewall settings |
+
+### Diagnostic Commands
 
 ```bash
 # Check server health
 curl http://localhost:8000/health
 
-# View server logs
-tail -f outputs/server.log
+# View Docker container logs
+docker logs -f trellis2-unity-studio
+
+# Check HuggingFace token is loaded
+docker exec trellis2-unity-studio printenv HF_TOKEN
+
+# Test model download (inside container)
+docker exec -it trellis2-unity-studio python3 -c "from huggingface_hub import login; login(token='YOUR_TOKEN')"
+
+# Clear HuggingFace cache and rebuild
+rm -rf ~/.cache/huggingface
+docker build --no-cache -f docker/Dockerfile -t trellis2-unity-studio .
 
 # Clear generated files
 rm -rf outputs/*
+```
+
+### Memory Modes
+
+| Mode | RAM Required | Speed | When to Use |
+|------|-------------|-------|-------------|
+| `keep_loaded` | 64GB+ | Fastest | Multiple text-to-3D generations |
+| `swap` | 32GB+ | Slower | Limited RAM, mixed workloads |
+| `auto` | Any | Auto-detects | Default, recommended |
+
+Set via environment variable:
+```bash
+docker run ... -e MEMORY_MODE=swap ...
+# or
+./run_docker.sh --memory swap
 ```
 
 ---
@@ -325,6 +464,6 @@ Built on [Microsoft TRELLIS.2](https://github.com/microsoft/TRELLIS.2) (MIT Lice
 
 <p align="center">
   <b>Generate 3D assets with AI, directly in Unity</b><br>
-  <a href="https://github.com/your-org/trellis2-unity-studio">GitHub</a> •
-  <a href="https://github.com/your-org/trellis2-unity-studio/issues">Issues</a>
+  <a href="https://github.com/Scriptwonder/trellis2-unity-studio">GitHub</a> •
+  <a href="https://github.com/Scriptwonder/trellis2-unity-studio/issues">Issues</a>
 </p>

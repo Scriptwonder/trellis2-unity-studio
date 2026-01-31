@@ -5,7 +5,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: trellis2-unity-studio
+    image: trellis2-unity-studio:fixed
     runtime: nvidia
     ports:
       - "8000:8000"
@@ -17,6 +17,8 @@ services:
       # For superfast mode performance
       - MEMORY_MODE=keep_loaded
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      # Ensure application source dir and vendor TRELLIS.2 are on Python path so imports work
+      - PYTHONPATH=/app/src:/app/vendor/TRELLIS.2
     deploy:
       resources:
         reservations:
