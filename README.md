@@ -28,6 +28,7 @@
 - **Quality Presets** — SuperFast (~15s), Fast (~60s), Balanced (~90s), High (~180s)
 - **Auto-Import** — Generated GLBs import directly to project
 - **Web Interface** — Optional Gradio UI for standalone use
+- **Optional GPT-Image Integration** - Using GPT-Image to replace the flux.2 pipeline for efficiency (Checkout the GPT-Image-API branch for the same usage)
 
 ---
 
