@@ -1,4 +1,3 @@
-"""
 """TRELLIS.2 + GPT-Image API FastAPI Server
 Provides REST API for text-to-3D and image-to-3D generation.
 

@@ -1,8 +1,12 @@
-# TRELLIS.2 Unity Studio Docker Image
-# Based on the working TRELLIS.2 Dockerfile with conda environment
+# TRELLIS.2 Unity Studio Docker Image (GPT-Image Mode)
+# Uses OpenAI GPT-Image API for text-to-image, TRELLIS.2 for image-to-3D
+# TRELLIS.2 stays loaded - no model swapping needed!
 #
 # Build:
 #   docker build -f docker/Dockerfile -t trellis2-unity-studio .
+#
+# Run:
+#   ./run_docker.sh   # Loads .env with HF_TOKEN and OPENAI_API_KEY
 
 FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
 
@@ -75,6 +79,9 @@ RUN git clone https://github.com/JeffreyXiang/FlexGEMM.git /tmp/extensions/FlexG
 RUN pip install accelerate && \
     pip install git+https://github.com/huggingface/diffusers.git@main && \
     pip install git+https://github.com/huggingface/transformers.git@main
+
+# Install OpenAI
+RUN pip install openai
 
 # Set working directory
 WORKDIR /app

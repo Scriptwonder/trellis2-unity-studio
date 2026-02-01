@@ -41,21 +41,22 @@ QUALITY_PRESETS = {
     'superfast': {
         'pipeline_type': '512',
         'inference_steps': 4,
-        'decimation_target': 30000,
+        'decimation_target': 20000,
         'texture_size': 512,
         'remesh': False,
         # Optimized sampler params for maximum speed
         'ss_guidance_strength': 5.0,
         'shape_guidance_strength': 5.0,
         'tex_guidance_strength': 1.0,
-        'use_compile': True,  # torch.compile for speed
+        'low_vram': True,  # Disable low_vram for speed (requires 24GB+)
     },
     'fast': {
         'pipeline_type': '512',
-        'inference_steps': 15,
+        'inference_steps': 12,
         'decimation_target': 50000,
         'texture_size': 1024,
         'remesh': False,
+        'low_vram': True,
     },
     'balanced': {
         'pipeline_type': '512',
@@ -63,6 +64,7 @@ QUALITY_PRESETS = {
         'decimation_target': 100000,
         'texture_size': 2048,
         'remesh': False,
+        'low_vram': True,
     },
     'high': {
         'pipeline_type': '1024_cascade',
@@ -70,6 +72,7 @@ QUALITY_PRESETS = {
         'decimation_target': 500000,
         'texture_size': 4096,
         'remesh': True,
+        'low_vram': True,
     },
 }
 
@@ -139,12 +142,10 @@ class GPTImageClient:
         print(f"[INFO] Generating image via GPT-Image API...")
         print(f"[INFO] Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
         
+        # GPT-Image API returns b64_json by default
         result = self._client.images.generate(
             model=self.model,
             prompt=prompt,
-            size=size,
-            quality=quality,
-            response_format="b64_json",
         )
         
         # Decode base64 response to PIL Image
@@ -206,7 +207,7 @@ class Trellis2Pipeline:
         if preload_trellis:
             self._load_trellis()
 
-    def _load_trellis(self, use_compile: bool = False) -> Trellis2ImageTo3DPipeline:
+    def _load_trellis(self, use_compile: bool = False, low_vram: bool = True) -> Trellis2ImageTo3DPipeline:
         """Load TRELLIS.2 pipeline (lazy loading)."""
         if self._trellis_pipe is None:
             print("[INFO] Loading TRELLIS.2 pipeline...")
@@ -215,8 +216,12 @@ class Trellis2Pipeline:
                 self.trellis_model
             )
             self._trellis_pipe.cuda()
-            self._trellis_pipe.low_vram = True
             print("[INFO] TRELLIS.2 pipeline loaded and ready.")
+        
+        # Configure low_vram mode (can be changed per-request)
+        self._trellis_pipe.low_vram = low_vram
+        if not low_vram:
+            print("[INFO] Low-VRAM mode disabled for maximum speed (requires 24GB+ VRAM)")
         
         # Apply torch.compile for superfast mode (cached after first run)
         if use_compile and not self._compiled:
@@ -290,7 +295,8 @@ class Trellis2Pipeline:
         _report('loading_trellis')
         t0 = time.time()
         use_compile = preset.get('use_compile', False)
-        trellis = self._load_trellis(use_compile=use_compile)
+        low_vram = preset.get('low_vram', True)
+        trellis = self._load_trellis(use_compile=use_compile, low_vram=low_vram)
         timings['trellis_load'] = time.time() - t0
 
         # Build sampler params
