@@ -1,5 +1,8 @@
-# TRELLIS.2 Unity Studio
+# TRELLIS.2 Unity Studio (GPT-Image Mode)
 # Server and Web Interface Dependencies
+#
+# This branch uses OpenAI GPT-Image API for text-to-image,
+# keeping TRELLIS.2 loaded at all times (no model swapping).
 
 # Server
 fastapi>=0.104.0
@@ -14,8 +17,11 @@ requests>=2.31.0
 numpy>=1.24.0
 pillow>=10.0.0
 
-# Hugging Face
+# Hugging Face (for TRELLIS.2 model downloads)
 huggingface-hub>=0.20.0
+
+# OpenAI API (for GPT-Image text-to-image)
+openai>=1.0.0
 
 # Utilities
 tqdm>=4.66.0
@@ -23,3 +29,6 @@ pyyaml>=6.0
 
 # PyTorch - install separately:
 # pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+
+# Note: diffusers is NOT required in this branch since we use
+# OpenAI GPT-Image API instead of local Flux model

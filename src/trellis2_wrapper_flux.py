@@ -1,20 +1,10 @@
 """
-TRELLIS.2 + GPT-Image API Wrapper
+TRELLIS.2 + Flux Wrapper
 Provides inference functions for text-to-3D and image-to-3D pipelines.
 
-This version uses OpenAI's GPT-Image API for text-to-image generation,
-offloading image generation to the cloud. This allows TRELLIS.2 to stay
-loaded in GPU memory at all times, eliminating model swapping overhead.
-
-Benefits:
-  - No model swapping: TRELLIS.2 stays loaded 100% of the time
-  - No local GPU memory for image generation
-  - Simpler memory management
-  - Faster text-to-3D (no ~50s swap overhead)
-
-Requirements:
-  - OPENAI_API_KEY environment variable must be set
-  - openai package installed (pip install openai)
+Memory modes (set via MEMORY_MODE env var):
+  - "keep_loaded": Both models stay in memory (requires 64GB+ RAM, fastest)
+  - "swap":        Unload Flux before loading TRELLIS.2 (works with 32GB RAM)
 """
 import os
 os.environ.setdefault('OPENCV_IO_ENABLE_OPENEXR', '1')
@@ -24,19 +14,22 @@ os.environ.setdefault('ATTN_BACKEND', 'xformers')
 os.environ.setdefault('SPARSE_ATTN_BACKEND', 'xformers')
 os.environ.setdefault('SPARSE_CONV_BACKEND', 'flex_gemm')
 
-import io
-import base64
+import gc
 import time
+import psutil
 from dataclasses import dataclass
 from typing import Optional, Literal, Callable
 
 import torch
 from PIL import Image
-from openai import OpenAI
+from diffusers import Flux2KleinPipeline
 from trellis2.pipelines import Trellis2ImageTo3DPipeline
 import o_voxel
 
-# Quality presets for TRELLIS.2
+# Minimum RAM (in GB) to safely keep both models loaded
+MIN_RAM_KEEP_LOADED = 48
+
+# Quality presets
 QUALITY_PRESETS = {
     'superfast': {
         'pipeline_type': '512',
@@ -77,7 +70,9 @@ QualityLevel = Literal['superfast', 'fast', 'balanced', 'high']
 
 # Progress stages reported during generation
 STAGES = {
-    'generating_image': 'Generating image (GPT-Image API)',
+    'loading_flux': 'Loading Flux model',
+    'generating_image': 'Generating image',
+    'unloading_flux': 'Freeing GPU memory',
     'loading_trellis': 'Loading TRELLIS.2 model',
     'generating_mesh': 'Generating 3D mesh',
     'exporting_glb': 'Exporting GLB',
@@ -95,131 +90,109 @@ class InferenceResult:
     timings: Optional[dict] = None
 
 
-class GPTImageClient:
-    """
-    Client for OpenAI's GPT-Image API.
-    
-    Handles text-to-image generation via the cloud API,
-    freeing local GPU for TRELLIS.2.
-    """
-    
-    def __init__(
-        self,
-        model: str = "gpt-image-1.5",
-        api_key: Optional[str] = None,
-    ):
-        """
-        Initialize the GPT-Image client.
-        
-        Args:
-            model: GPT-Image model to use (default: gpt-image-1.5)
-            api_key: OpenAI API key. If None, uses OPENAI_API_KEY env var.
-        """
-        self.model = model
-        self._client = OpenAI(api_key=api_key) if api_key else OpenAI()
-        print(f"[INFO] GPT-Image client initialized (model: {model})")
-    
-    def generate(
-        self,
-        prompt: str,
-        size: str = "1024x1024",
-        quality: str = "standard",
-    ) -> Image.Image:
-        """
-        Generate an image from a text prompt.
-        
-        Args:
-            prompt: Text description of the image to generate
-            size: Image size (e.g., "1024x1024", "1792x1024")
-            quality: Image quality ("standard" or "hd")
-            
-        Returns:
-            PIL Image object
-        """
-        print(f"[INFO] Generating image via GPT-Image API...")
-        print(f"[INFO] Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
-        
-        result = self._client.images.generate(
-            model=self.model,
-            prompt=prompt,
-            size=size,
-            quality=quality,
-            response_format="b64_json",
-        )
-        
-        # Decode base64 response to PIL Image
-        image_base64 = result.data[0].b64_json
-        image_bytes = base64.b64decode(image_base64)
-        image = Image.open(io.BytesIO(image_bytes))
-        
-        # Convert to RGB if necessary (remove alpha channel for TRELLIS.2)
-        if image.mode == 'RGBA':
-            image = image.convert('RGB')
-        
-        print(f"[INFO] Image generated: {image.size[0]}x{image.size[1]}")
-        return image
+def _detect_memory_mode() -> str:
+    """Auto-detect memory mode based on available system RAM."""
+    mode = os.environ.get('MEMORY_MODE', 'auto')
+    if mode in ('keep_loaded', 'swap'):
+        return mode
+
+    # Auto-detect based on available RAM
+    total_ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+    if total_ram_gb >= MIN_RAM_KEEP_LOADED:
+        print(f"[INFO] Detected {total_ram_gb:.0f}GB RAM -> keep_loaded mode")
+        return 'keep_loaded'
+    else:
+        print(f"[INFO] Detected {total_ram_gb:.0f}GB RAM (< {MIN_RAM_KEEP_LOADED}GB) -> swap mode")
+        return 'swap'
 
 
 class Trellis2Pipeline:
     """
-    TRELLIS.2 pipeline with GPT-Image API for text-to-image.
-    
-    This pipeline keeps TRELLIS.2 loaded at all times since image
-    generation is offloaded to the cloud via GPT-Image API.
-    No model swapping required!
+    Combined Flux + TRELLIS.2 pipeline for text-to-3D and image-to-3D.
+
+    Memory modes:
+        keep_loaded: Both models stay in memory. Fastest for repeated text-to-3D
+                     calls since no model loading/unloading between requests.
+                     Requires 64GB+ system RAM.
+
+        swap:        Flux is unloaded before TRELLIS.2 runs. Works with 32GB RAM
+                     but adds ~50s overhead per text-to-3D call for model swapping.
     """
 
     def __init__(
         self,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
+        flux_model: str = "black-forest-labs/FLUX.2-klein-4B",
         trellis_model: str = "microsoft/TRELLIS.2-4B",
-        gpt_image_model: str = "gpt-image-1.5",
-        openai_api_key: Optional[str] = None,
+        preload_flux: bool = False,
         preload_trellis: bool = True,
+        memory_mode: str = "auto",
     ):
-        """
-        Initialize the pipeline.
-        
-        Args:
-            device: Device for TRELLIS.2 (default: cuda)
-            dtype: Data type for TRELLIS.2 (default: bfloat16)
-            trellis_model: TRELLIS.2 model ID on HuggingFace
-            gpt_image_model: GPT-Image model to use
-            openai_api_key: OpenAI API key (uses env var if None)
-            preload_trellis: Whether to load TRELLIS.2 immediately
-        """
         self.device = device
         self.dtype = dtype
+        self.flux_model = flux_model
         self.trellis_model = trellis_model
 
-        # Initialize GPT-Image client (no GPU memory needed!)
-        self._gpt_image = GPTImageClient(
-            model=gpt_image_model,
-            api_key=openai_api_key,
-        )
-
-        # TRELLIS.2 pipeline (stays loaded)
+        self._flux_pipe: Optional[Flux2KleinPipeline] = None
         self._trellis_pipe: Optional[Trellis2ImageTo3DPipeline] = None
-        self._compiled = False
 
-        if preload_trellis:
-            self._load_trellis()
+        # Determine memory strategy
+        if memory_mode == "auto":
+            self.memory_mode = _detect_memory_mode()
+        else:
+            self.memory_mode = memory_mode
+
+        print(f"[INFO] Memory mode: {self.memory_mode}")
+
+        if self.memory_mode == 'keep_loaded':
+            # In keep_loaded mode, preload both models
+            if preload_flux:
+                self._load_flux()
+            if preload_trellis:
+                self._load_trellis()
+        else:
+            # In swap mode, don't preload - models are loaded on demand
+            # to avoid having both in memory simultaneously
+            print("[INFO] Swap mode: models will be loaded on demand.")
+
+    def _load_flux(self) -> Flux2KleinPipeline:
+        """Load Flux pipeline (lazy loading)."""
+        if self._flux_pipe is None:
+            print("[INFO] Loading Flux pipeline...")
+            self._flux_pipe = Flux2KleinPipeline.from_pretrained(
+                self.flux_model,
+                torch_dtype=self.dtype
+            )
+            self._flux_pipe.enable_model_cpu_offload()
+            print("[INFO] Flux pipeline loaded.")
+        return self._flux_pipe
 
     def _load_trellis(self, use_compile: bool = False) -> Trellis2ImageTo3DPipeline:
         """Load TRELLIS.2 pipeline (lazy loading)."""
         if self._trellis_pipe is None:
             print("[INFO] Loading TRELLIS.2 pipeline...")
             
+            # Clear any leftover torch function mode stack from Flux cpu_offload
+            # This prevents meta tensor issues in BiRefNet model loading
+            try:
+                import torch.utils._device as _device_module
+                # Pop all modes from the torch function stack
+                while _device_module._len_torch_function_stack() > 0:
+                    _device_module._pop_mode()
+                    print("[DEBUG] Popped a torch function mode")
+            except Exception as e:
+                print(f"[DEBUG] Could not clear torch function stack: {e}")
+            
             self._trellis_pipe = Trellis2ImageTo3DPipeline.from_pretrained(
                 self.trellis_model
             )
             self._trellis_pipe.cuda()
             self._trellis_pipe.low_vram = True
-            print("[INFO] TRELLIS.2 pipeline loaded and ready.")
+            print("[INFO] TRELLIS.2 pipeline loaded.")
         
         # Apply torch.compile for superfast mode (cached after first run)
-        if use_compile and not self._compiled:
+        if use_compile and not getattr(self, '_compiled', False):
             try:
                 print("[INFO] Compiling models with torch.compile (first run will be slow)...")
                 if 'sparse_structure_flow_model' in self._trellis_pipe.models:
@@ -239,30 +212,62 @@ class Trellis2Pipeline:
         
         return self._trellis_pipe
 
+    def _unload_flux(self):
+        """Unload Flux to free memory."""
+        if self._flux_pipe is not None:
+            # Remove cpu_offload hooks before deleting to clean up accelerate state
+            try:
+                self._flux_pipe.maybe_free_model_hooks()
+            except Exception:
+                pass
+            del self._flux_pipe
+            self._flux_pipe = None
+            gc.collect()
+            torch.cuda.empty_cache()
+            
+            # Reset torch device context stack to prevent meta tensor issues
+            # This is needed because enable_model_cpu_offload() may leave
+            # device contexts that cause torch.linspace() to create meta tensors
+            try:
+                from torch.utils._device import _device_constructors, _caching_mode
+                # Clear any registered device constructors that might redirect to meta device
+                if hasattr(torch.utils._device, '_device_constructors'):
+                    torch.utils._device._device_constructors.clear()
+            except Exception:
+                pass
+            
+            print("[INFO] Flux pipeline unloaded.")
+
+    def _unload_trellis(self):
+        """Unload TRELLIS.2 to free memory."""
+        if self._trellis_pipe is not None:
+            del self._trellis_pipe
+            self._trellis_pipe = None
+            gc.collect()
+            torch.cuda.empty_cache()
+            print("[INFO] TRELLIS.2 pipeline unloaded.")
+
     def generate_image(
         self,
         prompt: str,
-        size: str = "1024x1024",
-        quality: str = "standard",
+        seed: int = 42,
+        height: int = 1024,
+        width: int = 1024,
+        num_inference_steps: int = 4,
     ) -> Image.Image:
-        """
-        Generate an image from a text prompt using GPT-Image API.
-        
-        This runs in the cloud, not on local GPU!
-        
-        Args:
-            prompt: Text description of the image
-            size: Image size (default: 1024x1024)
-            quality: Image quality ("standard" or "hd")
-            
-        Returns:
-            PIL Image object
-        """
-        return self._gpt_image.generate(
+        """Generate an image from a text prompt using Flux."""
+        flux = self._load_flux()
+
+        image = flux(
             prompt=prompt,
-            size=size,
-            quality=quality,
-        )
+            height=height,
+            width=width,
+            guidance_scale=1.0,
+            num_inference_steps=num_inference_steps,
+            generator=torch.Generator(device=self.device).manual_seed(seed)
+        ).images[0]
+
+        return image
 
     def image_to_3d(
         self,
@@ -273,11 +278,7 @@ class Trellis2Pipeline:
         seed: int = 42,
         on_progress: ProgressCallback = None,
     ) -> InferenceResult:
-        """
-        Generate a 3D model from an image using TRELLIS.2.
-        
-        TRELLIS.2 is always loaded, so this is very fast!
-        """
+        """Generate a 3D model from an image using TRELLIS.2."""
         os.makedirs(output_dir, exist_ok=True)
         preset = QUALITY_PRESETS[quality]
         timings = {}
@@ -286,14 +287,14 @@ class Trellis2Pipeline:
             if on_progress:
                 on_progress(stage, STAGES.get(stage, stage))
 
-        # Load TRELLIS.2 (should already be loaded, this is a no-op)
+        # Load TRELLIS.2
         _report('loading_trellis')
         t0 = time.time()
         use_compile = preset.get('use_compile', False)
         trellis = self._load_trellis(use_compile=use_compile)
         timings['trellis_load'] = time.time() - t0
 
-        # Build sampler params
+        # Build sampler params (superfast uses optimized guidance values)
         ss_params = {
             'steps': preset['inference_steps'],
         }
@@ -357,24 +358,20 @@ class Trellis2Pipeline:
         output_name: str = "output",
         quality: QualityLevel = "balanced",
         seed: int = 42,
-        image_size: str = "1024x1024",
-        image_quality: str = "standard",
         on_progress: ProgressCallback = None,
     ) -> InferenceResult:
         """
-        Generate a 3D model from a text prompt.
-        
-        Uses GPT-Image API for text-to-image (cloud), then TRELLIS.2 for
-        image-to-3D (local GPU). No model swapping required!
+        Generate a 3D model from a text prompt (Flux + TRELLIS.2).
+
+        In 'keep_loaded' mode, both models stay in memory for fastest throughput.
+        In 'swap' mode, Flux is unloaded before TRELLIS.2 runs (saves ~20GB RAM).
 
         Args:
             prompt: Text description of the object to generate
             output_dir: Directory to save output files
             output_name: Prefix for output filenames
-            quality: TRELLIS.2 quality preset ('superfast', 'fast', 'balanced', 'high')
-            seed: Random seed for TRELLIS.2 reproducibility
-            image_size: GPT-Image output size (default: 1024x1024)
-            image_quality: GPT-Image quality ("standard" or "hd")
+            quality: Quality preset ('fast', 'balanced', 'high')
+            seed: Random seed for reproducibility
             on_progress: Optional callback for progress reporting
 
         Returns:
@@ -387,22 +384,27 @@ class Trellis2Pipeline:
             if on_progress:
                 on_progress(stage, STAGES.get(stage, stage))
 
-        # Generate image with GPT-Image API (cloud - no local GPU!)
-        _report('generating_image')
+        # In swap mode, unload TRELLIS.2 before loading Flux
+        if self.memory_mode == 'swap':
+            self._unload_trellis()
+
+        # Generate image with Flux
+        _report('loading_flux')
         t0 = time.time()
-        image = self.generate_image(
-            prompt=prompt,
-            size=image_size,
-            quality=image_quality,
-        )
-        timings['gpt_image_generate'] = time.time() - t0
+        _report('generating_image')
+        image = self.generate_image(prompt, seed=seed)
+        timings['flux_generate'] = time.time() - t0
 
         # Save image
         image_path = os.path.join(output_dir, f"{output_name}_image.png")
         image.save(image_path)
-        print(f"[INFO] Saved generated image to {image_path}")
 
-        # Generate 3D from image (TRELLIS.2 is already loaded!)
+        # In swap mode, free Flux memory before loading TRELLIS.2
+        if self.memory_mode == 'swap':
+            _report('unloading_flux')
+            self._unload_flux()
+
+        # Generate 3D from image
         result = self.image_to_3d(
             image=image,
             output_dir=output_dir,
@@ -427,7 +429,10 @@ def get_pipeline() -> Trellis2Pipeline:
     """Get or create the global pipeline instance."""
     global _pipeline
     if _pipeline is None:
-        _pipeline = Trellis2Pipeline(preload_trellis=True)
+        _pipeline = Trellis2Pipeline(
+            preload_trellis=True,
+            memory_mode="auto",
+        )
     return _pipeline
 
 
@@ -437,8 +442,6 @@ def run_text_to_3d(
     output_name: str = "output",
     quality: QualityLevel = "balanced",
     seed: int = 42,
-    image_size: str = "1024x1024",
-    image_quality: str = "standard",
     on_progress: ProgressCallback = None,
 ) -> InferenceResult:
     """Convenience function for text-to-3D generation."""
@@ -449,8 +452,6 @@ def run_text_to_3d(
         output_name=output_name,
         quality=quality,
         seed=seed,
-        image_size=image_size,
-        image_quality=image_quality,
         on_progress=on_progress,
     )
 
@@ -476,8 +477,6 @@ def run_image_to_3d(
 
 
 # Preload on module import
-print("[INFO] Initializing TRELLIS.2 pipeline (GPT-Image mode)...")
-print("[INFO] Image generation will use OpenAI GPT-Image API (cloud)")
-print("[INFO] TRELLIS.2 will stay loaded - no model swapping needed!")
-_pipeline = Trellis2Pipeline(preload_trellis=True)
+print("[INFO] Initializing pipeline...")
+_pipeline = Trellis2Pipeline(preload_trellis=True, memory_mode="auto")
 print("[INFO] Pipeline ready.")

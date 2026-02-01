@@ -1,13 +1,21 @@
 """
-TRELLIS.2 + Flux FastAPI Server
+"""TRELLIS.2 + GPT-Image API FastAPI Server
 Provides REST API for text-to-3D and image-to-3D generation.
 
+This server uses OpenAI's GPT-Image API for text-to-image generation,
+offloading image generation to the cloud. TRELLIS.2 stays loaded in
+GPU memory at all times - no model swapping needed!
+
 Endpoints:
-    POST /submit/text       - Submit text-to-3D job
-    POST /submit/image      - Submit image-to-3D job
+    POST /submit/text       - Submit text-to-3D job (GPT-Image -> TRELLIS.2)
+    POST /submit/image      - Submit image-to-3D job (TRELLIS.2 only)
     GET  /status/{job_id}   - Get job status
     GET  /result/{job_id}   - Get job result (GLB download path)
     GET  /health            - Health check
+
+Environment Variables:
+    OPENAI_API_KEY          - Required for text-to-3D generation
+    OUTPUT_DIR              - Directory for generated files (default: ./outputs)
 """
 import io
 import os
@@ -26,8 +34,8 @@ from trellis2_wrapper import run_text_to_3d, run_image_to_3d
 
 app = FastAPI(
     title="TRELLIS.2 API",
-    description="Text-to-3D and Image-to-3D generation using Flux + TRELLIS.2",
-    version="1.0.0",
+    description="Text-to-3D and Image-to-3D generation using GPT-Image API + TRELLIS.2",
+    version="2.0.0",
 )
 
 # Allow all origins for Unity/remote access
@@ -61,9 +69,17 @@ class TextSubmitRequest(BaseModel):
     prompt: str = Field(..., description="Text prompt describing the 3D object")
     quality: Literal["superfast", "fast", "balanced", "high"] = Field(
         default="balanced",
-        description="Quality preset: superfast (~15s), fast (~60s), balanced (~90s), high (~180s)"
+        description="TRELLIS.2 quality preset: superfast (~15s), fast (~60s), balanced (~90s), high (~180s)"
     )
-    seed: int = Field(default=42, description="Random seed for reproducibility")
+    seed: int = Field(default=42, description="Random seed for TRELLIS.2 reproducibility")
+    image_size: str = Field(
+        default="1024x1024",
+        description="GPT-Image output size (e.g., '1024x1024', '1792x1024')"
+    )
+    image_quality: Literal["standard", "hd"] = Field(
+        default="standard",
+        description="GPT-Image quality: 'standard' (faster) or 'hd' (more detailed)"
+    )
 
 
 class ImageSubmitRequest(BaseModel):
@@ -115,6 +131,8 @@ def _run_job(job_id: str, image_data: Optional[bytes] = None) -> None:
                 output_name="model",
                 quality=job.get("quality", "balanced"),
                 seed=job.get("seed", 42),
+                image_size=job.get("image_size", "1024x1024"),
+                image_quality=job.get("image_quality", "standard"),
                 on_progress=_on_progress,
             )
             job["result"] = {
@@ -196,6 +214,8 @@ def submit_text(request: TextSubmitRequest):
         "prompt": prompt,
         "quality": request.quality,
         "seed": request.seed,
+        "image_size": request.image_size,
+        "image_quality": request.image_quality,
         "status": "queued",
     })
     return {"job_id": job_id, "status": "queued"}
@@ -337,12 +357,15 @@ def delete_job(job_id: str):
 async def startup_event():
     """Log startup information."""
     print("=" * 60)
-    print("TRELLIS.2 API Server")
+    print("TRELLIS.2 API Server (GPT-Image Mode)")
     print("=" * 60)
     print(f"Output directory: {OUTPUT_DIR}")
+    print("Mode: GPT-Image API for text-to-image (cloud)")
+    print("      TRELLIS.2 stays loaded - no model swapping!")
+    print("")
     print("Endpoints:")
-    print("  POST /submit/text   - Text-to-3D")
-    print("  POST /submit/image  - Image-to-3D")
+    print("  POST /submit/text   - Text-to-3D (GPT-Image + TRELLIS.2)")
+    print("  POST /submit/image  - Image-to-3D (TRELLIS.2 only)")
     print("  GET  /status/{id}   - Job status")
     print("  GET  /result/{id}   - Job result")
     print("  GET  /health        - Health check")
