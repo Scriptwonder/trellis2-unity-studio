@@ -1,0 +1,6 @@
+# rename it to .env
+# HuggingFace token for TRELLIS.2 model download
+HF_TOKEN=YOUR_HF_TOKEN
+# OpenAI API key for GPT-Image text-to-image generation
+# Get your key from: https://platform.openai.com/api-keys
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
